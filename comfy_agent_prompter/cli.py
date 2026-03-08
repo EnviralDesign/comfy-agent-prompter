@@ -15,7 +15,7 @@ app = typer.Typer(no_args_is_help=True, add_completion=False)
 
 
 @app.command()
-def serve(host: str = "127.0.0.1", port: int = 8000) -> None:
+def serve(host: str = "127.0.0.1", port: int = 8765) -> None:
     uvicorn.run("comfy_agent_prompter.main:app", host=host, port=port, reload=False)
 
 
@@ -79,4 +79,3 @@ def doctor(config: str = typer.Option(..., "--config")) -> None:
             print(f"  model_count: {len(judge_models.get('data', []))}")
 
     asyncio.run(_doctor())
-
