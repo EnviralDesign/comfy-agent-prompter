@@ -23,14 +23,19 @@ class OpenAICompatibleClient:
         if self.config.response_format == "json_object":
             payload["response_format"] = {"type": "json_object"}
 
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            response = await client.post(
-                self._endpoint_url("/chat/completions"),
-                headers=self._headers(),
-                json=payload,
-            )
-            response.raise_for_status()
-            body = response.json()
+        try:
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                response = await client.post(
+                    self._endpoint_url("/chat/completions"),
+                    headers=self._headers(),
+                    json=payload,
+                )
+                response.raise_for_status()
+                body = response.json()
+        except httpx.HTTPError as exc:
+            raise RuntimeError(
+                f"{self._describe_target()} request to /chat/completions failed: {exc}"
+            ) from exc
 
         choices = body.get("choices", [])
         if not choices:
@@ -49,10 +54,13 @@ class OpenAICompatibleClient:
         raise ValueError("Model response content was not text.")
 
     async def list_models(self) -> dict[str, Any]:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.get(self._endpoint_url("/models"), headers=self._headers())
-            response.raise_for_status()
-            return response.json()
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.get(self._endpoint_url("/models"), headers=self._headers())
+                response.raise_for_status()
+                return response.json()
+        except httpx.HTTPError as exc:
+            raise RuntimeError(f"{self._describe_target()} request to /models failed: {exc}") from exc
 
     def _headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
@@ -65,3 +73,8 @@ class OpenAICompatibleClient:
     def _endpoint_url(self, suffix: str) -> str:
         return f"{self.config.base_url.rstrip('/')}{suffix}"
 
+    def _describe_target(self) -> str:
+        return (
+            f"Provider '{self.config.label}' "
+            f"(model={self.config.model}, base_url={self.config.base_url.rstrip('/')})"
+        )

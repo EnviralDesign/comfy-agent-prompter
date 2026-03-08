@@ -33,6 +33,13 @@ The visual UI is the primary surface right now, so the project is built as:
 
 The loop keeps text history and image history as separate rolling windows. That matters because multimodal context is provider-specific and often much more expensive than plain text context. The current implementation does not replay the entire conversation back to the model. Instead it synthesizes recent local state so cheaper models can stay on task without carrying the full historical loop forever.
 
+The runner now has two levels of control:
+
+- Judge rounds: the expensive checkpoints where the judge evaluates progress.
+- Inner agent tries: the local exploration steps the prompter can take before escalating back to the judge.
+
+At the end of each judge round, the prompter selects the best candidate from its local batch and only that candidate is sent to the judge.
+
 ## Quick start
 
 1. Copy [`.env.example`](/C:/repos/comfy-agent-prompter/.env.example) to `.env` and set `OPENROUTER_API_KEY` if you want to use OpenRouter.
@@ -75,8 +82,8 @@ uv run cap doctor --config examples/config.example.json
 The UI shows:
 
 - Run list and status.
-- Live event stream from the backend.
-- Iteration cards with prompt, judge feedback, and generated image.
+- A transcript-style conversation view for prompter, judge, and image outputs.
+- A raw run trace for lower-level debugging.
 - Summary stats such as iteration count, judge count, acceptance state, and stop reason.
 
 ## Configuration model
@@ -91,6 +98,16 @@ The config file is JSON and contains:
 - `generation_defaults.*`
 - `task.objective`
 - `task.reference_image_paths`
+
+Important loop knobs:
+
+- `loop.max_judge_rounds`
+- `loop.max_agent_iterations_per_round`
+- `loop.min_agent_iterations_before_judge`
+- `loop.agent_text_history_turns`
+- `loop.agent_image_history_turns`
+- `loop.judge_text_history_turns`
+- `loop.judge_image_history_turns`
 
 Both providers are expected to expose OpenAI-compatible endpoints. For the first slice this means:
 

@@ -51,8 +51,13 @@ class GenerationDefaults(BaseModel):
 class LoopConfig(BaseModel):
     enable_judge: bool = True
     max_iterations: int = 8
+    max_judge_rounds: int | None = None
+    max_agent_iterations_per_round: int = 3
+    min_agent_iterations_before_judge: int = 1
     agent_text_history_turns: int = 4
     agent_image_history_turns: int = 2
+    judge_text_history_turns: int = 3
+    judge_image_history_turns: int = 2
     min_iterations_before_self_stop: int = 2
     save_artifacts: bool = True
 
@@ -88,6 +93,7 @@ class AgentPlan(BaseModel):
     cfg_scale: float | None = None
     seed: int | None = None
     is_satisfied: bool = False
+    ready_for_judge: bool = False
     self_critique: str | None = None
     notes_to_judge: str | None = None
 
@@ -99,6 +105,12 @@ class JudgeResult(BaseModel):
     must_fix: list[str] = Field(default_factory=list)
 
 
+class AgentSelectionDecision(BaseModel):
+    selected_iteration_index: int
+    rationale: str
+    notes_to_judge: str | None = None
+
+
 class RunEvent(BaseModel):
     timestamp: datetime
     type: str
@@ -108,6 +120,8 @@ class RunEvent(BaseModel):
 
 class IterationSnapshot(BaseModel):
     index: int
+    judge_round: int = 1
+    round_iteration: int = 1
     prompt: str
     negative_prompt: str | None = None
     width: int | None = None
@@ -117,9 +131,13 @@ class IterationSnapshot(BaseModel):
     seed: int | None = None
     self_critique: str | None = None
     notes_to_judge: str | None = None
+    selected_for_judge: bool = False
+    selected_as_frontier: bool = False
+    selection_rationale: str | None = None
     judge_accept: bool | None = None
     judge_feedback: str | None = None
     judge_score: float | None = None
+    judge_must_fix: list[str] = Field(default_factory=list)
     image_path: str
     image_data_url: str | None = None
 
@@ -143,4 +161,3 @@ class RunSummary(BaseModel):
 class RunDetail(RunSummary):
     events: list[RunEvent] = Field(default_factory=list)
     iterations: list[IterationSnapshot] = Field(default_factory=list)
-

@@ -63,7 +63,7 @@ class RunStore:
         async with self._lock:
             current = self._runs[run_id]
             iterations = [*current.iterations, snapshot]
-            judge_count = sum(1 for item in iterations if item.judge_feedback)
+            judge_count = sum(1 for item in iterations if item.selected_for_judge)
             self._runs[run_id] = current.model_copy(
                 update={
                     "updated_at": datetime.now(UTC),
@@ -71,6 +71,28 @@ class RunStore:
                     "iteration_count": len(iterations),
                     "judge_count": judge_count,
                     "final_image_path": snapshot.image_path,
+                }
+            )
+
+        await self._broadcast(
+            run_id,
+            {"type": "iteration", "iteration": snapshot.model_dump(mode="json")},
+        )
+
+    async def update_iteration(self, run_id: str, snapshot: IterationSnapshot) -> None:
+        async with self._lock:
+            current = self._runs[run_id]
+            iterations = [
+                snapshot if item.index == snapshot.index else item
+                for item in current.iterations
+            ]
+            judge_count = sum(1 for item in iterations if item.selected_for_judge)
+            self._runs[run_id] = current.model_copy(
+                update={
+                    "updated_at": datetime.now(UTC),
+                    "iterations": iterations,
+                    "judge_count": judge_count,
+                    "final_image_path": iterations[-1].image_path if iterations else current.final_image_path,
                 }
             )
 
@@ -92,4 +114,3 @@ class RunStore:
     async def _broadcast(self, run_id: str, payload: dict) -> None:
         for queue in list(self._subscribers.get(run_id, set())):
             await queue.put(payload)
-

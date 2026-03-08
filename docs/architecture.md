@@ -15,12 +15,21 @@ Support two modes over one shared core:
    - Optional reference images
    - Recent text history
    - Recent generated images
+   - The last judged frontier
+   - Judge-round budget information
 2. Ask the prompting agent for a JSON generation plan.
 3. Apply that plan to a ComfyUI workflow template via a mapping file.
 4. Run ComfyUI and collect the output image.
-5. If the judge is enabled, ask the judge to accept or reject the result.
-6. Either stop or continue iterating.
-7. Persist artifacts and emit live events.
+5. Repeat steps 2-4 inside an agent-only inner loop for up to `max_agent_iterations_per_round`.
+   - The agent may request judge review early by setting `ready_for_judge=true`.
+   - The agent is expected to explore locally, preserve wins, and narrow from coarse changes to fine changes.
+6. Ask the prompting agent to select the single best candidate from the inner-loop batch.
+7. If the judge is enabled, ask the judge to evaluate only that selected candidate.
+   - The judge sees the current candidate plus a small rolling window of recent trajectory.
+   - That history is intentionally smaller than the full run and is meant to help detect regressions,
+     stagnation, and local optima without turning the judge into a second prompting agent.
+8. Either stop or continue to the next judge round.
+9. Persist artifacts and emit live events.
 
 ## Stack
 
@@ -37,10 +46,15 @@ Multimodal context handling differs across providers and models.
 Even when an API presents images cleanly as content parts, the real cost and context behavior are not uniform.
 Because of that, the runner tracks:
 
+- `max_judge_rounds`
+- `max_agent_iterations_per_round`
 - `agent_text_history_turns`
 - `agent_image_history_turns`
+- `judge_text_history_turns`
+- `judge_image_history_turns`
 
 This lets the system stay useful for cheap local models that benefit from a small local gradient of recent attempts without forcing full replay of every past image and every past message.
+It also lets the judge operate with a broader, project-manager-like view of recent progress while still staying lightweight and ephemeral.
 
 ## Current limitations
 
@@ -88,4 +102,3 @@ Expand workflow support:
 - ControlNet and other extra inputs
 - Alternative workflow families
 - Better image selection when multiple outputs are generated
-

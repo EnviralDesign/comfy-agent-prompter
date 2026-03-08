@@ -27,9 +27,14 @@
   },
   "loop": {
     "enable_judge": true,
-    "max_iterations": 8,
+    "max_iterations": 4,
+    "max_judge_rounds": 4,
+    "max_agent_iterations_per_round": 3,
+    "min_agent_iterations_before_judge": 2,
     "agent_text_history_turns": 4,
     "agent_image_history_turns": 2,
+    "judge_text_history_turns": 3,
+    "judge_image_history_turns": 2,
     "min_iterations_before_self_stop": 2,
     "save_artifacts": true
   },

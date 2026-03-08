@@ -7,11 +7,13 @@ from pathlib import Path
 
 from comfy_agent_prompter.comfy.client import ComfyUiClient
 from comfy_agent_prompter.config import load_app_config
-from comfy_agent_prompter.files import bytes_to_data_url, ensure_dir, path_to_data_url, write_json
-from comfy_agent_prompter.models import AgentPlan, IterationSnapshot
+from comfy_agent_prompter.files import bytes_to_data_url, ensure_dir, path_to_data_url, read_json, write_json
+from comfy_agent_prompter.models import AgentPlan, IterationSnapshot, WorkflowMapping
 from comfy_agent_prompter.prompts import (
     build_agent_messages,
+    build_agent_selection_messages,
     build_judge_messages,
+    parse_agent_selection,
     parse_agent_plan,
     parse_judge_result,
 )
@@ -90,6 +92,7 @@ class OrchestrationRunner:
             reference_data_urls = [path_to_data_url(path) for path in config.task.reference_image_paths]
             output_dir = ensure_dir(Path("runs") / f"{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}-{run_id}")
             await self.run_store.update_run(run_id, output_dir=str(output_dir.resolve()))
+            workflow_mapping = WorkflowMapping.model_validate(read_json(config.comfyui.mapping_path))
 
             agent_client = OpenAICompatibleClient(config.providers["agent"])
             judge_client = (
@@ -104,98 +107,321 @@ class OrchestrationRunner:
             await self.run_store.append_event(run_id, "comfy.ready", "ComfyUI client configured.")
 
             snapshots: list[IterationSnapshot] = []
+            frontier_snapshot: IterationSnapshot | None = None
             accepted = False
-            stop_reason = "max_iterations_reached"
+            judge_round_limit = config.loop.max_judge_rounds or config.loop.max_iterations
+            global_iteration_index = 0
+            stop_reason = "max_judge_rounds_reached"
 
-            for iteration_index in range(1, config.loop.max_iterations + 1):
+            async def replace_snapshot(updated_snapshot: IterationSnapshot) -> None:
+                for idx, item in enumerate(snapshots):
+                    if item.index == updated_snapshot.index:
+                        snapshots[idx] = updated_snapshot
+                        await self.run_store.update_iteration(run_id, updated_snapshot)
+                        return
+                raise KeyError(f"Iteration snapshot {updated_snapshot.index} was not found.")
+
+            for judge_round in range(1, judge_round_limit + 1):
                 await self.run_store.append_event(
                     run_id,
-                    "agent.requested",
-                    f"Requesting plan for iteration {iteration_index}.",
-                    iteration=iteration_index,
+                    "judge.round.started",
+                    f"Judge round {judge_round} started.",
+                    judge_round=judge_round,
+                    max_judge_rounds=judge_round_limit,
                 )
 
-                agent_messages = build_agent_messages(config, snapshots, reference_data_urls)
-                agent_text, _ = await agent_client.complete(agent_messages)
-                plan: AgentPlan = parse_agent_plan(agent_text, config)
+                round_candidates: list[IterationSnapshot] = []
+                requested_judge_early = False
 
-                await self.run_store.append_event(
-                    run_id,
-                    "agent.planned",
-                    f"Agent produced prompt for iteration {iteration_index}.",
-                    iteration=iteration_index,
-                    prompt=plan.prompt,
-                )
+                for round_iteration in range(1, config.loop.max_agent_iterations_per_round + 1):
+                    global_iteration_index += 1
+                    await self.run_store.append_event(
+                        run_id,
+                        "agent.requested",
+                        f"Requesting plan for iteration {global_iteration_index}.",
+                        iteration=global_iteration_index,
+                        judge_round=judge_round,
+                        round_iteration=round_iteration,
+                        max_judge_rounds=judge_round_limit,
+                        max_agent_iterations_per_round=config.loop.max_agent_iterations_per_round,
+                        provider_label=config.providers["agent"].label,
+                        provider_model=config.providers["agent"].model,
+                        provider_base_url=config.providers["agent"].base_url,
+                    )
 
-                primary_reference = config.task.reference_image_paths[0] if config.task.reference_image_paths else None
-                await self.run_store.append_event(
-                    run_id,
-                    "comfy.executing",
-                    f"ComfyUI execution started for iteration {iteration_index}.",
-                    iteration=iteration_index,
-                )
-                filename, image_bytes = await comfy_client.generate(plan, primary_reference)
-                image_path = output_dir / f"iteration-{iteration_index:03d}-{filename}"
-                image_path.write_bytes(image_bytes)
-                image_data_url = bytes_to_data_url(image_bytes, suffix=image_path.suffix or ".png")
-
-                await self.run_store.append_event(
-                    run_id,
-                    "image.generated",
-                    f"ComfyUI finished iteration {iteration_index}.",
-                    iteration=iteration_index,
-                    image_path=str(image_path.resolve()),
-                )
-
-                judge_accept = None
-                judge_feedback = None
-                judge_score = None
-
-                if judge_client is not None:
-                    judge_messages = build_judge_messages(config, plan, image_data_url, reference_data_urls)
-                    judge_text, _ = await judge_client.complete(judge_messages)
-                    judge_result = parse_judge_result(judge_text)
-                    judge_accept = judge_result.accept
-                    judge_feedback = judge_result.feedback
-                    judge_score = judge_result.score
+                    agent_messages = build_agent_messages(
+                        config,
+                        snapshots,
+                        reference_data_urls,
+                        judge_round=judge_round,
+                        max_judge_rounds=judge_round_limit,
+                        round_iteration=round_iteration,
+                        frontier=frontier_snapshot,
+                    )
+                    agent_text, _ = await agent_client.complete(agent_messages)
+                    plan: AgentPlan = parse_agent_plan(agent_text, config)
 
                     await self.run_store.append_event(
                         run_id,
-                        "judge.completed",
-                        f"Judge evaluated iteration {iteration_index}.",
-                        iteration=iteration_index,
-                        accept=judge_result.accept,
-                        feedback=judge_result.feedback,
+                        "agent.planned",
+                        f"Agent produced prompt for iteration {global_iteration_index}.",
+                        iteration=global_iteration_index,
+                        judge_round=judge_round,
+                        round_iteration=round_iteration,
+                        prompt=plan.prompt,
+                        ready_for_judge=plan.ready_for_judge,
                     )
 
-                    if judge_result.accept:
-                        accepted = True
-                        stop_reason = "judge_accepted"
-                elif plan.is_satisfied and iteration_index >= config.loop.min_iterations_before_self_stop:
-                    accepted = True
-                    stop_reason = "agent_self_stopped"
+                    primary_reference = (
+                        config.task.reference_image_paths[0] if config.task.reference_image_paths else None
+                    )
+                    await self.run_store.append_event(
+                        run_id,
+                        "comfy.executing",
+                        f"ComfyUI execution started for iteration {global_iteration_index}.",
+                        iteration=global_iteration_index,
+                        judge_round=judge_round,
+                        round_iteration=round_iteration,
+                    )
 
-                snapshot = IterationSnapshot(
-                    index=iteration_index,
-                    prompt=plan.prompt,
-                    negative_prompt=plan.negative_prompt,
-                    width=plan.width,
-                    height=plan.height,
-                    steps=plan.steps,
-                    cfg_scale=plan.cfg_scale,
-                    seed=plan.seed,
-                    self_critique=plan.self_critique,
-                    notes_to_judge=plan.notes_to_judge,
-                    judge_accept=judge_accept,
-                    judge_feedback=judge_feedback,
-                    judge_score=judge_score,
-                    image_path=str(image_path.resolve()),
-                    image_data_url=image_data_url,
-                )
-                snapshots.append(snapshot)
-                await self.run_store.append_iteration(run_id, snapshot)
+                    async def report_comfy_status(stage: str, data: dict[str, object]) -> None:
+                        event_type = f"comfy.{stage}"
+                        message = {
+                            "prompt_prepared": f"ComfyUI prompt prepared for iteration {global_iteration_index}.",
+                            "prompt_submitted": f"ComfyUI accepted iteration {global_iteration_index} into its queue.",
+                            "waiting_for_output": f"Waiting for ComfyUI output for iteration {global_iteration_index}.",
+                            "still_waiting": (
+                                "ComfyUI is still running iteration "
+                                f"{global_iteration_index} ({data.get('elapsed_seconds', 0)}s elapsed)."
+                            ),
+                            "output_ready": f"ComfyUI reported an image for iteration {global_iteration_index}.",
+                            "reference_upload_started": (
+                                f"Uploading reference image for iteration {global_iteration_index}."
+                            ),
+                            "reference_upload_completed": (
+                                f"Reference image uploaded for iteration {global_iteration_index}."
+                            ),
+                        }.get(stage, f"ComfyUI status update for iteration {global_iteration_index}: {stage}.")
+                        await self.run_store.append_event(
+                            run_id,
+                            event_type,
+                            message,
+                            iteration=global_iteration_index,
+                            judge_round=judge_round,
+                            round_iteration=round_iteration,
+                            **data,
+                        )
+
+                    filename, image_bytes = await comfy_client.generate(
+                        plan,
+                        primary_reference,
+                        status_callback=report_comfy_status,
+                    )
+                    image_path = output_dir / f"iteration-{global_iteration_index:03d}-{filename}"
+                    image_path.write_bytes(image_bytes)
+                    image_data_url = bytes_to_data_url(image_bytes, suffix=image_path.suffix or ".png")
+
+                    await self.run_store.append_event(
+                        run_id,
+                        "image.generated",
+                        f"ComfyUI finished iteration {global_iteration_index}.",
+                        iteration=global_iteration_index,
+                        judge_round=judge_round,
+                        round_iteration=round_iteration,
+                        image_path=str(image_path.resolve()),
+                    )
+
+                    snapshot = IterationSnapshot(
+                        index=global_iteration_index,
+                        judge_round=judge_round,
+                        round_iteration=round_iteration,
+                        prompt=plan.prompt,
+                        negative_prompt=(
+                            plan.negative_prompt
+                            if workflow_mapping.negative_prompt is not None
+                            else config.generation_defaults.negative_prompt
+                        ),
+                        width=(
+                            plan.width
+                            if workflow_mapping.width is not None
+                            else config.generation_defaults.width
+                        ),
+                        height=(
+                            plan.height
+                            if workflow_mapping.height is not None
+                            else config.generation_defaults.height
+                        ),
+                        steps=(
+                            plan.steps
+                            if workflow_mapping.steps is not None
+                            else config.generation_defaults.steps
+                        ),
+                        cfg_scale=(
+                            plan.cfg_scale
+                            if workflow_mapping.cfg_scale is not None
+                            else config.generation_defaults.cfg_scale
+                        ),
+                        seed=(
+                            plan.seed if workflow_mapping.seed is not None else config.generation_defaults.seed
+                        ),
+                        self_critique=plan.self_critique,
+                        notes_to_judge=plan.notes_to_judge,
+                        image_path=str(image_path.resolve()),
+                        image_data_url=image_data_url,
+                    )
+                    snapshots.append(snapshot)
+                    round_candidates.append(snapshot)
+                    await self.run_store.append_iteration(run_id, snapshot)
+
+                    if judge_client is None:
+                        if plan.is_satisfied and global_iteration_index >= config.loop.min_iterations_before_self_stop:
+                            accepted = True
+                            stop_reason = "agent_self_stopped"
+                            snapshot = snapshot.model_copy(update={"selected_as_frontier": True})
+                            await replace_snapshot(snapshot)
+                            frontier_snapshot = snapshot
+                            break
+                    elif (
+                        plan.ready_for_judge
+                        and round_iteration >= config.loop.min_agent_iterations_before_judge
+                    ):
+                        requested_judge_early = True
+                        await self.run_store.append_event(
+                            run_id,
+                            "agent.ready_for_judge",
+                            (
+                                f"Agent requested judge review after iteration {global_iteration_index} "
+                                f"in judge round {judge_round}."
+                            ),
+                            iteration=global_iteration_index,
+                            judge_round=judge_round,
+                            round_iteration=round_iteration,
+                        )
+                        break
 
                 if accepted:
+                    break
+
+                if judge_client is None:
+                    continue
+
+                if not round_candidates:
+                    continue
+
+                if len(round_candidates) == 1:
+                    selection_rationale = (
+                        "Only one candidate was generated in this judge round."
+                        if requested_judge_early
+                        else "Only one candidate was available for judge review."
+                    )
+                    selected_snapshot = round_candidates[0].model_copy(
+                        update={
+                            "selected_for_judge": True,
+                            "selection_rationale": selection_rationale,
+                        }
+                    )
+                else:
+                    await self.run_store.append_event(
+                        run_id,
+                        "agent.selecting_candidate",
+                        f"Agent is selecting the best candidate from judge round {judge_round}.",
+                        judge_round=judge_round,
+                        candidate_iterations=[candidate.index for candidate in round_candidates],
+                    )
+                    selection_messages = build_agent_selection_messages(
+                        config,
+                        round_candidates,
+                        reference_data_urls,
+                        judge_round=judge_round,
+                        max_judge_rounds=judge_round_limit,
+                        frontier=frontier_snapshot,
+                    )
+                    selection_text, _ = await agent_client.complete(selection_messages)
+                    selection = parse_agent_selection(selection_text, round_candidates)
+                    chosen = next(
+                        candidate
+                        for candidate in round_candidates
+                        if candidate.index == selection.selected_iteration_index
+                    )
+                    selected_snapshot = chosen.model_copy(
+                        update={
+                            "selected_for_judge": True,
+                            "selection_rationale": selection.rationale,
+                            "notes_to_judge": selection.notes_to_judge or chosen.notes_to_judge,
+                        }
+                    )
+
+                if frontier_snapshot is not None and frontier_snapshot.selected_as_frontier:
+                    demoted_frontier = frontier_snapshot.model_copy(update={"selected_as_frontier": False})
+                    frontier_snapshot = demoted_frontier
+                    await replace_snapshot(demoted_frontier)
+
+                selected_snapshot = selected_snapshot.model_copy(update={"selected_as_frontier": True})
+                await replace_snapshot(selected_snapshot)
+                frontier_snapshot = selected_snapshot
+
+                await self.run_store.append_event(
+                    run_id,
+                    "agent.selected_candidate",
+                    f"Agent selected iteration {selected_snapshot.index} for judge review.",
+                    iteration=selected_snapshot.index,
+                    judge_round=judge_round,
+                    round_iteration=selected_snapshot.round_iteration,
+                    selection_rationale=selected_snapshot.selection_rationale,
+                )
+
+                await self.run_store.append_event(
+                    run_id,
+                    "judge.requested",
+                    f"Requesting judge evaluation for iteration {selected_snapshot.index}.",
+                    iteration=selected_snapshot.index,
+                    judge_round=judge_round,
+                    round_iteration=selected_snapshot.round_iteration,
+                    provider_label=config.providers["judge"].label,
+                    provider_model=config.providers["judge"].model,
+                    provider_base_url=config.providers["judge"].base_url,
+                    judge_text_history_turns=config.loop.judge_text_history_turns,
+                    judge_image_history_turns=config.loop.judge_image_history_turns,
+                    max_judge_rounds=judge_round_limit,
+                )
+                judge_messages = build_judge_messages(
+                    config,
+                    [item for item in snapshots if item.index != selected_snapshot.index],
+                    selected_snapshot,
+                    reference_data_urls,
+                    judge_round=judge_round,
+                    max_judge_rounds=judge_round_limit,
+                )
+                judge_text, _ = await judge_client.complete(judge_messages)
+                judge_result = parse_judge_result(judge_text)
+
+                selected_snapshot = selected_snapshot.model_copy(
+                    update={
+                        "judge_accept": judge_result.accept,
+                        "judge_feedback": judge_result.feedback,
+                        "judge_score": judge_result.score,
+                        "judge_must_fix": judge_result.must_fix,
+                    }
+                )
+                await replace_snapshot(selected_snapshot)
+                frontier_snapshot = selected_snapshot
+
+                await self.run_store.append_event(
+                    run_id,
+                    "judge.completed",
+                    f"Judge evaluated iteration {selected_snapshot.index}.",
+                    iteration=selected_snapshot.index,
+                    judge_round=judge_round,
+                    round_iteration=selected_snapshot.round_iteration,
+                    accept=judge_result.accept,
+                    score=judge_result.score,
+                    feedback=judge_result.feedback,
+                    must_fix=judge_result.must_fix,
+                )
+
+                if judge_result.accept:
+                    accepted = True
+                    stop_reason = "judge_accepted"
                     break
 
             manifest = {

@@ -113,7 +113,7 @@ function connectSocket(runId) {
 
 function renderRun(run) {
   document.querySelector("#run-title").textContent = `${run.run_id} • ${run.status}`;
-  document.querySelector("#run-meta").textContent = run.objective;
+  document.querySelector("#run-meta").textContent = `${run.objective} • ${run.config_path}`;
 
   const stats = [
     ["Accepted", String(run.accepted)],
@@ -127,8 +127,59 @@ function renderRun(run) {
     .map(([label, value]) => `<div class="stat"><span>${label}</span><strong>${value}</strong></div>`)
     .join("");
 
+  renderTranscript(run);
+  renderTrace(run);
+}
+
+function renderTranscript(run) {
+  const transcript = document.querySelector("#transcript");
+  const messages = buildTranscript(run);
+
+  transcript.innerHTML = "";
+  if (messages.length === 0) {
+    transcript.innerHTML = `<p class="empty">No conversation yet.</p>`;
+    return;
+  }
+
+  for (const message of messages) {
+    const item = document.createElement("article");
+    item.className = `message message-${message.role}`;
+
+    const body = [];
+    if (message.title) {
+      body.push(`<div class="message-title">${escapeHtml(message.title)}</div>`);
+    }
+    if (message.text) {
+      body.push(`<p>${escapeHtml(message.text).replaceAll("\n", "<br>")}</p>`);
+    }
+    if (message.imageDataUrl) {
+      body.push(
+        `<img src="${message.imageDataUrl}" alt="${escapeHtml(message.imageAlt || "Generated image")}" />`,
+      );
+    }
+    if (message.meta && message.meta.length > 0) {
+      body.push(
+        `<div class="message-meta">${message.meta.map((entry) => `<span>${escapeHtml(entry)}</span>`).join("")}</div>`,
+      );
+    }
+
+    item.innerHTML = `
+      <div class="message-top">
+        <strong>${escapeHtml(message.speaker)}</strong>
+        <span>${new Date(message.timestamp).toLocaleTimeString()}</span>
+      </div>
+      <div class="message-body">
+        ${body.join("")}
+      </div>
+    `;
+    transcript.appendChild(item);
+  }
+}
+
+function renderTrace(run) {
   const eventLog = document.querySelector("#events");
   eventLog.innerHTML = "";
+
   for (const event of run.events.slice().reverse()) {
     const item = document.createElement("article");
     item.className = "event";
@@ -137,32 +188,142 @@ function renderRun(run) {
         <strong>${event.type}</strong>
         <span>${new Date(event.timestamp).toLocaleTimeString()}</span>
       </div>
-      <p>${event.message}</p>
-      <pre>${JSON.stringify(event.data, null, 2)}</pre>
+      <p>${escapeHtml(event.message)}</p>
+      <pre>${escapeHtml(JSON.stringify(event.data, null, 2))}</pre>
     `;
     eventLog.appendChild(item);
   }
+}
 
-  const iterations = document.querySelector("#iterations");
-  iterations.innerHTML = "";
-  for (const iteration of run.iterations.slice().reverse()) {
-    const card = document.createElement("article");
-    card.className = "iteration";
-    card.innerHTML = `
-      <header>
-        <strong>Iteration ${iteration.index}</strong>
-        <span>${iteration.judge_accept === true ? "accepted" : iteration.judge_accept === false ? "rejected" : "unjudged"}</span>
-      </header>
-      <p><strong>Prompt</strong><br>${escapeHtml(iteration.prompt)}</p>
-      <p><strong>Judge</strong><br>${escapeHtml(iteration.judge_feedback || "n/a")}</p>
-      ${iteration.image_path ? `<img src="${iteration.image_data_url}" alt="Iteration ${iteration.index}" />` : ""}
-    `;
-    iterations.appendChild(card);
+function buildTranscript(run) {
+  const messages = [
+    {
+      role: "system",
+      speaker: "System",
+      title: "Objective",
+      text: run.objective,
+      meta: [
+        `config: ${run.config_path}`,
+        `status: ${run.status}`,
+      ],
+      timestamp: run.created_at,
+    },
+  ];
+
+  const eventTimes = new Map();
+  for (const event of run.events) {
+    const iteration = event.data?.iteration;
+    if (iteration) {
+      eventTimes.set(`${event.type}:${iteration}`, event.timestamp);
+    }
+
+    if (
+      event.type === "run.failed" ||
+      event.type === "run.finished" ||
+      event.type === "judge.round.started" ||
+      event.type === "agent.ready_for_judge" ||
+      event.type === "agent.selecting_candidate" ||
+      event.type === "agent.selected_candidate" ||
+      event.type === "comfy.executing" ||
+      event.type === "comfy.prompt_submitted" ||
+      event.type === "comfy.waiting_for_output" ||
+      event.type === "comfy.still_waiting"
+    ) {
+      messages.push({
+        role: "system",
+        speaker: "System",
+        title: event.type,
+        text: event.message,
+        meta: formatEventMeta(event),
+        timestamp: event.timestamp,
+      });
+    }
   }
+
+  for (const iteration of run.iterations) {
+    messages.push({
+      role: "agent",
+      speaker: "Prompter",
+      title: `Round ${iteration.judge_round} • Try ${iteration.round_iteration} • Iteration ${iteration.index}`,
+      text: iteration.prompt,
+      meta: compactMeta([
+        iteration.self_critique ? `self-critique: ${iteration.self_critique}` : null,
+        iteration.notes_to_judge ? `notes to judge: ${iteration.notes_to_judge}` : null,
+        iteration.selected_for_judge ? "selected for judge" : null,
+        iteration.selected_as_frontier ? "frontier" : null,
+        iteration.selection_rationale ? `selection: ${iteration.selection_rationale}` : null,
+      ]),
+      timestamp:
+        eventTimes.get(`agent.planned:${iteration.index}`) ||
+        eventTimes.get(`agent.requested:${iteration.index}`) ||
+        run.updated_at,
+    });
+
+    if (iteration.image_data_url) {
+      messages.push({
+        role: "image",
+        speaker: "ComfyUI",
+        title: `Rendered image for iteration ${iteration.index}`,
+        text: null,
+        imageDataUrl: iteration.image_data_url,
+        imageAlt: `Iteration ${iteration.index}`,
+        meta: compactMeta([
+          `round ${iteration.judge_round}`,
+          `try ${iteration.round_iteration}`,
+          iteration.image_path ? `saved: ${iteration.image_path}` : null,
+        ]),
+        timestamp:
+          eventTimes.get(`image.generated:${iteration.index}`) ||
+          run.updated_at,
+      });
+    }
+
+    if (iteration.judge_feedback || iteration.judge_accept !== null) {
+      messages.push({
+        role: "judge",
+        speaker: "Judge",
+        title: `Iteration ${iteration.index} ${iteration.judge_accept ? "accepted" : "feedback"}`,
+        text: iteration.judge_feedback || (iteration.judge_accept ? "Accepted." : "No feedback returned."),
+        meta: compactMeta([
+          iteration.judge_score !== null ? `score: ${iteration.judge_score}` : null,
+          iteration.judge_accept !== null ? `accepted: ${iteration.judge_accept}` : null,
+          iteration.judge_must_fix?.length ? `must-fix: ${iteration.judge_must_fix.join(" | ")}` : null,
+        ]),
+        timestamp:
+          eventTimes.get(`judge.completed:${iteration.index}`) ||
+          eventTimes.get(`judge.requested:${iteration.index}`) ||
+          run.updated_at,
+      });
+    }
+  }
+
+  return messages.sort((left, right) => new Date(left.timestamp) - new Date(right.timestamp));
+}
+
+function formatEventMeta(event) {
+  return compactMeta([
+    event.data?.iteration ? `iteration: ${event.data.iteration}` : null,
+    event.data?.judge_round ? `judge round: ${event.data.judge_round}` : null,
+    event.data?.round_iteration ? `inner try: ${event.data.round_iteration}` : null,
+    event.data?.provider_label ? `provider: ${event.data.provider_label}` : null,
+    event.data?.provider_model ? `model: ${event.data.provider_model}` : null,
+    event.data?.max_judge_rounds ? `max judge rounds: ${event.data.max_judge_rounds}` : null,
+    event.data?.max_agent_iterations_per_round
+      ? `max inner tries: ${event.data.max_agent_iterations_per_round}`
+      : null,
+    event.data?.elapsed_seconds ? `elapsed: ${event.data.elapsed_seconds}s` : null,
+    event.data?.selection_rationale ? `selection: ${event.data.selection_rationale}` : null,
+    event.data?.must_fix?.length ? `must-fix: ${event.data.must_fix.join(" | ")}` : null,
+    event.data?.error ? `error: ${event.data.error}` : null,
+  ]);
+}
+
+function compactMeta(values) {
+  return values.filter(Boolean);
 }
 
 function escapeHtml(value) {
-  return value
+  return String(value)
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;");
