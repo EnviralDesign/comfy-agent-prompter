@@ -1,0 +1,35 @@
+{
+  "positive_prompt": {
+    "node_id": "6",
+    "input_name": "text"
+  },
+  "negative_prompt": {
+    "node_id": "7",
+    "input_name": "text"
+  },
+  "width": {
+    "node_id": "5",
+    "input_name": "width"
+  },
+  "height": {
+    "node_id": "5",
+    "input_name": "height"
+  },
+  "steps": {
+    "node_id": "3",
+    "input_name": "steps"
+  },
+  "cfg_scale": {
+    "node_id": "3",
+    "input_name": "cfg"
+  },
+  "seed": {
+    "node_id": "3",
+    "input_name": "seed"
+  },
+  "filename_prefix": {
+    "node_id": "9",
+    "input_name": "filename_prefix"
+  }
+}
+

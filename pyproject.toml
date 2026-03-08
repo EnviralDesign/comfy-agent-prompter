@@ -1,0 +1,30 @@
+[project]
+name = "comfy-agent-prompter"
+version = "0.1.0"
+description = "Agent-judge harness for iterative ComfyUI prompting with live UI and batch benchmarking."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.118.0",
+  "httpx>=0.28.1",
+  "jinja2>=3.1.6",
+  "pydantic>=2.11.9",
+  "python-dotenv>=1.1.1",
+  "typer>=0.19.2",
+  "uvicorn>=0.37.0"
+]
+
+[project.scripts]
+cap = "comfy_agent_prompter.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+package = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+

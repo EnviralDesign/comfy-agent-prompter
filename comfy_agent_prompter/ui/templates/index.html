@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Comfy Agent Prompter</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <p class="eyebrow">Live Agent Loop</p>
+          <h1>Comfy Agent Prompter</h1>
+          <p class="lede">Watch the prompting agent, the judge, and the image outputs evolve in real time.</p>
+        </div>
+
+        <form id="run-form" class="panel form-panel">
+          <label>
+            <span>Config path</span>
+            <input id="config-path" name="config_path" type="text" placeholder="examples/config.example.json" required />
+          </label>
+          <label>
+            <span>Objective override</span>
+            <textarea id="objective-override" name="objective_override" rows="4" placeholder="Optional task override"></textarea>
+          </label>
+          <label>
+            <span>Reference paths</span>
+            <input id="reference-paths" name="reference_paths" type="text" placeholder="comma,separated,paths" />
+          </label>
+          <button type="submit">Start run</button>
+        </form>
+
+        <section class="panel">
+          <div class="panel-heading">
+            <h2>Runs</h2>
+            <button id="refresh-runs" type="button" class="ghost">Refresh</button>
+          </div>
+          <div id="run-list" class="run-list"></div>
+        </section>
+      </aside>
+
+      <main class="main">
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Selected Run</p>
+            <h2 id="run-title">No run selected</h2>
+            <p id="run-meta" class="meta">Start a run or choose one from the list.</p>
+          </div>
+          <div id="stat-grid" class="stat-grid"></div>
+        </section>
+
+        <section class="content-grid">
+          <section class="panel">
+            <div class="panel-heading">
+              <h2>Events</h2>
+            </div>
+            <div id="events" class="event-log"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-heading">
+              <h2>Iterations</h2>
+            </div>
+            <div id="iterations" class="iteration-grid"></div>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <script src="/static/app.js" defer></script>
+  </body>
+</html>
+

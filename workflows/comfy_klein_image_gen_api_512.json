@@ -1,0 +1,213 @@
+{
+  "517": {
+    "inputs": {
+      "text": "a man standing and waving\n",
+      "clip": [
+        "539",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Positive Prompt)"
+    }
+  },
+  "523": {
+    "inputs": {
+      "sampler_name": "euler"
+    },
+    "class_type": "KSamplerSelect",
+    "_meta": {
+      "title": "KSamplerSelect"
+    }
+  },
+  "529": {
+    "inputs": {
+      "value": 512
+    },
+    "class_type": "PrimitiveInt",
+    "_meta": {
+      "title": "Width"
+    }
+  },
+  "530": {
+    "inputs": {
+      "value": 512
+    },
+    "class_type": "PrimitiveInt",
+    "_meta": {
+      "title": "Height"
+    }
+  },
+  "531": {
+    "inputs": {
+      "noise_seed": 773776833588616
+    },
+    "class_type": "RandomNoise",
+    "_meta": {
+      "title": "RandomNoise"
+    }
+  },
+  "535": {
+    "inputs": {
+      "unet_name": "flux2\\flux-2-klein-9b-Q8_0.gguf"
+    },
+    "class_type": "UnetLoaderGGUF",
+    "_meta": {
+      "title": "Unet Loader (GGUF)"
+    }
+  },
+  "536": {
+    "inputs": {
+      "unet_name": "flux2\\flux-2-klein-9b-fp8.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "537": {
+    "inputs": {
+      "vae_name": "flux2\\flux2-vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "539": {
+    "inputs": {
+      "clip_name": "qwen_3_8b_fp4mixed.safetensors",
+      "type": "flux2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "540": {
+    "inputs": {
+      "images": [
+        "527:152",
+        0
+      ]
+    },
+    "class_type": "PreviewImage",
+    "_meta": {
+      "title": "Preview Image"
+    }
+  },
+  "527:139": {
+    "inputs": {
+      "width": [
+        "529",
+        0
+      ],
+      "height": [
+        "530",
+        0
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyFlux2LatentImage",
+    "_meta": {
+      "title": "Empty Flux 2 Latent"
+    }
+  },
+  "527:140": {
+    "inputs": {
+      "steps": 4,
+      "width": [
+        "529",
+        0
+      ],
+      "height": [
+        "530",
+        0
+      ]
+    },
+    "class_type": "Flux2Scheduler",
+    "_meta": {
+      "title": "Flux2Scheduler"
+    }
+  },
+  "527:154": {
+    "inputs": {
+      "conditioning": [
+        "517",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "ConditioningZeroOut"
+    }
+  },
+  "527:148": {
+    "inputs": {
+      "cfg": 1,
+      "model": [
+        "536",
+        0
+      ],
+      "positive": [
+        "517",
+        0
+      ],
+      "negative": [
+        "527:154",
+        0
+      ]
+    },
+    "class_type": "CFGGuider",
+    "_meta": {
+      "title": "CFGGuider"
+    }
+  },
+  "527:151": {
+    "inputs": {
+      "noise": [
+        "531",
+        0
+      ],
+      "guider": [
+        "527:148",
+        0
+      ],
+      "sampler": [
+        "523",
+        0
+      ],
+      "sigmas": [
+        "527:140",
+        0
+      ],
+      "latent_image": [
+        "527:139",
+        0
+      ]
+    },
+    "class_type": "SamplerCustomAdvanced",
+    "_meta": {
+      "title": "SamplerCustomAdvanced"
+    }
+  },
+  "527:152": {
+    "inputs": {
+      "samples": [
+        "527:151",
+        0
+      ],
+      "vae": [
+        "537",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  }
+}

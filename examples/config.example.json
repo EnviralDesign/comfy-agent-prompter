@@ -1,0 +1,49 @@
+{
+  "comfyui": {
+    "base_url": "http://127.0.0.1:8188",
+    "workflow_path": "../workflows/comfy_klein_image_gen_api_512.json",
+    "mapping_path": "../workflows/comfy_klein_image_gen_api_512.mapping.json",
+    "poll_interval_ms": 1500,
+    "request_timeout_ms": 120000
+  },
+  "providers": {
+    "agent": {
+      "label": "lmstudio-agent",
+      "base_url": "http://127.0.0.1:1234/v1",
+      "model": "qwen/qwen3.5-9b",
+      "response_format": "text",
+      "temperature": 0.5,
+      "max_tokens": 1400
+    },
+    "judge": {
+      "label": "openrouter-judge",
+      "base_url": "https://openrouter.ai/api/v1",
+      "model": "openai/gpt-4.1-mini",
+      "api_key_env": "OPENROUTER_API_KEY",
+      "response_format": "json_object",
+      "temperature": 0.1,
+      "max_tokens": 800
+    }
+  },
+  "loop": {
+    "enable_judge": true,
+    "max_iterations": 8,
+    "agent_text_history_turns": 4,
+    "agent_image_history_turns": 2,
+    "min_iterations_before_self_stop": 2,
+    "save_artifacts": true
+  },
+  "generation_defaults": {
+    "width": 512,
+    "height": 512,
+    "steps": 4,
+    "cfg_scale": 1.0,
+    "negative_prompt": "",
+    "filename_prefix": "cap"
+  },
+  "task": {
+    "objective": "Create an image that matches the supplied reference image's composition and mood while preserving the requested subject.",
+    "quality_bar": "The image should be compositionally close, visually clean, and free from obvious anatomical or rendering defects.",
+    "reference_image_paths": []
+  }
+}
