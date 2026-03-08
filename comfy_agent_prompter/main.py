@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
@@ -22,6 +23,12 @@ class StartRunRequest(BaseModel):
     reference_image_paths_override: list[str] = Field(default_factory=list)
 
 
+class ConfigPresetResponse(BaseModel):
+    path: str
+    objective: str
+    reference_image_paths: list[str] = Field(default_factory=list)
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title="Comfy Agent Prompter")
     app.mount("/static", StaticFiles(directory=str(BASE_DIR / "ui" / "static")), name="static")
@@ -38,6 +45,26 @@ def create_app() -> FastAPI:
             reference_image_paths_override=payload.reference_image_paths_override or None,
         )
         return {"run_id": run_id}
+
+    @app.get("/api/configs")
+    async def list_config_presets() -> list[dict]:
+        config_dir = BASE_DIR.parent / "examples"
+        presets: list[ConfigPresetResponse] = []
+
+        for config_file in sorted(config_dir.glob("*.json")):
+            raw = json.loads(config_file.read_text(encoding="utf-8"))
+            if not {"comfyui", "providers", "task"}.issubset(raw.keys()):
+                continue
+            task = raw.get("task", {})
+            presets.append(
+                ConfigPresetResponse(
+                    path=str(Path("examples") / config_file.name).replace("\\", "/"),
+                    objective=task.get("objective", ""),
+                    reference_image_paths=task.get("reference_image_paths", []),
+                )
+            )
+
+        return [preset.model_dump(mode="json") for preset in presets]
 
     @app.get("/api/runs")
     async def list_runs() -> list[dict]:
@@ -77,4 +104,3 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
-

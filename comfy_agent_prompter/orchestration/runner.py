@@ -128,6 +128,12 @@ class OrchestrationRunner:
                 )
 
                 primary_reference = config.task.reference_image_paths[0] if config.task.reference_image_paths else None
+                await self.run_store.append_event(
+                    run_id,
+                    "comfy.executing",
+                    f"ComfyUI execution started for iteration {iteration_index}.",
+                    iteration=iteration_index,
+                )
                 filename, image_bytes = await comfy_client.generate(plan, primary_reference)
                 image_path = output_dir / f"iteration-{iteration_index:03d}-{filename}"
                 image_path.write_bytes(image_bytes)

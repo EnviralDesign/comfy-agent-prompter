@@ -2,26 +2,5 @@
   "positive_prompt": {
     "node_id": "517",
     "input_name": "text"
-  },
-  "width": {
-    "node_id": "529",
-    "input_name": "value"
-  },
-  "height": {
-    "node_id": "530",
-    "input_name": "value"
-  },
-  "steps": {
-    "node_id": "527:140",
-    "input_name": "steps"
-  },
-  "cfg_scale": {
-    "node_id": "527:148",
-    "input_name": "cfg"
-  },
-  "seed": {
-    "node_id": "531",
-    "input_name": "noise_seed"
   }
 }
-

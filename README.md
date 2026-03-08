@@ -47,6 +47,8 @@ uv run cap serve
 
 Then open [http://127.0.0.1:8765](http://127.0.0.1:8765).
 
+By default the server binds to `0.0.0.0:8765`.
+
 ## CLI usage
 
 Run a benchmark-style job:

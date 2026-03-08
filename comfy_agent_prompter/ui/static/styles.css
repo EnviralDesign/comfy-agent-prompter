@@ -99,18 +99,27 @@ body {
 }
 
 input,
+select,
 textarea,
 button {
   font: inherit;
 }
 
 input,
+select,
 textarea {
   width: 100%;
   padding: 12px 14px;
   border-radius: 16px;
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.74);
+}
+
+.hint {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  line-height: 1.4;
 }
 
 button {
@@ -264,4 +273,3 @@ button.ghost {
     grid-template-columns: 1fr;
   }
 }
-

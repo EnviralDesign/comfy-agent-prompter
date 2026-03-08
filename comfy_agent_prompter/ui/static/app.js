@@ -1,7 +1,14 @@
 const state = {
   selectedRunId: null,
   socket: null,
+  configMap: new Map(),
 };
+
+async function fetchConfigs() {
+  const response = await fetch("/api/configs");
+  const configs = await response.json();
+  renderConfigOptions(configs);
+}
 
 async function fetchRuns() {
   const response = await fetch("/api/runs");
@@ -10,6 +17,41 @@ async function fetchRuns() {
   if (!state.selectedRunId && runs.length > 0) {
     await selectRun(runs[0].run_id);
   }
+}
+
+function renderConfigOptions(configs) {
+  state.configMap = new Map(configs.map((config) => [config.path, config]));
+  const select = document.querySelector("#config-path");
+  const previous = window.localStorage.getItem("cap:selected-config");
+
+  select.innerHTML = "";
+
+  for (const config of configs) {
+    const option = document.createElement("option");
+    option.value = config.path;
+    option.textContent = config.path;
+    select.appendChild(option);
+  }
+
+  const nextValue =
+    (previous && state.configMap.has(previous) && previous) ||
+    (configs.length > 0 ? configs[0].path : "");
+
+  if (nextValue) {
+    select.value = nextValue;
+    applyConfigDefaults(nextValue);
+  }
+}
+
+function applyConfigDefaults(configPath) {
+  const config = state.configMap.get(configPath);
+  if (!config) {
+    return;
+  }
+
+  window.localStorage.setItem("cap:selected-config", configPath);
+  document.querySelector("#objective-override").value = config.objective || "";
+  document.querySelector("#reference-paths").value = (config.reference_image_paths || []).join(", ");
 }
 
 function renderRunList(runs) {
@@ -129,11 +171,16 @@ function escapeHtml(value) {
 document.querySelector("#run-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const configPath = document.querySelector("#config-path").value.trim();
-  const objectiveOverride = document.querySelector("#objective-override").value.trim();
+  const objectiveValue = document.querySelector("#objective-override").value.trim();
   const references = document.querySelector("#reference-paths").value
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
+  const configDefaults = state.configMap.get(configPath);
+  const defaultObjective = (configDefaults?.objective || "").trim();
+  const defaultReferences = configDefaults?.reference_image_paths || [];
+  const objectiveOverride = objectiveValue === defaultObjective ? null : objectiveValue || null;
+  const referenceOverrides = arraysEqual(references, defaultReferences) ? [] : references;
 
   const response = await fetch("/api/runs", {
     method: "POST",
@@ -143,7 +190,7 @@ document.querySelector("#run-form").addEventListener("submit", async (event) => 
     body: JSON.stringify({
       config_path: configPath,
       objective_override: objectiveOverride || null,
-      reference_image_paths_override: references,
+      reference_image_paths_override: referenceOverrides,
     }),
   });
 
@@ -153,6 +200,17 @@ document.querySelector("#run-form").addEventListener("submit", async (event) => 
 });
 
 document.querySelector("#refresh-runs").addEventListener("click", fetchRuns);
+document.querySelector("#config-path").addEventListener("change", (event) => {
+  applyConfigDefaults(event.target.value);
+});
 
-fetchRuns();
+function arraysEqual(left, right) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
 
+async function init() {
+  await fetchConfigs();
+  await fetchRuns();
+}
+
+init();

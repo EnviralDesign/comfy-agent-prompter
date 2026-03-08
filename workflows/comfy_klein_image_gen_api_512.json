@@ -23,7 +23,7 @@
   },
   "529": {
     "inputs": {
-      "value": 512
+      "value": 1024
     },
     "class_type": "PrimitiveInt",
     "_meta": {
@@ -32,7 +32,7 @@
   },
   "530": {
     "inputs": {
-      "value": 512
+      "value": 1024
     },
     "class_type": "PrimitiveInt",
     "_meta": {

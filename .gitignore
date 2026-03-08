@@ -11,3 +11,4 @@ runs/
 coverage/
 *.log
 tmp-debug-config.json
+.tmp*

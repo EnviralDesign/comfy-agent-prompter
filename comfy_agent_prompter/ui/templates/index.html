@@ -18,15 +18,18 @@
         <form id="run-form" class="panel form-panel">
           <label>
             <span>Config path</span>
-            <input id="config-path" name="config_path" type="text" placeholder="examples/config.example.json" required />
+            <select id="config-path" name="config_path" required></select>
+            <small class="hint">Tracked configs from <code>examples/</code>, refreshed on page load.</small>
           </label>
           <label>
             <span>Objective override</span>
             <textarea id="objective-override" name="objective_override" rows="4" placeholder="Optional task override"></textarea>
+            <small class="hint">Pre-filled from the selected config. Edit it only if you want this run to diverge.</small>
           </label>
           <label>
             <span>Reference paths</span>
             <input id="reference-paths" name="reference_paths" type="text" placeholder="comma,separated,paths" />
+            <small class="hint">Also pre-filled from the selected config when present.</small>
           </label>
           <button type="submit">Start run</button>
         </form>
@@ -71,4 +74,3 @@
     <script src="/static/app.js" defer></script>
   </body>
 </html>
-

@@ -8,15 +8,16 @@
   },
   "providers": {
     "agent": {
-      "label": "lmstudio-agent",
-      "base_url": "http://127.0.0.1:1234/v1",
-      "model": "qwen/qwen3.5-9b",
-      "response_format": "text",
-      "temperature": 0.5,
+      "label": "openrouter-prompter-test",
+      "base_url": "https://openrouter.ai/api/v1",
+      "model": "openai/gpt-5.3-chat",
+      "api_key_env": "OPENROUTER_API_KEY",
+      "response_format": "json_object",
+      "temperature": 0.4,
       "max_tokens": 1400
     },
     "judge": {
-      "label": "openrouter-judge",
+      "label": "openrouter-judge-test",
       "base_url": "https://openrouter.ai/api/v1",
       "model": "openai/gpt-5.4",
       "api_key_env": "OPENROUTER_API_KEY",
@@ -39,11 +40,14 @@
     "steps": 4,
     "cfg_scale": 1.0,
     "negative_prompt": "",
-    "filename_prefix": "cap"
+    "filename_prefix": "cap-test",
+    "seed": 1
   },
   "task": {
     "objective": "Create an image that matches the supplied reference image's composition and mood while preserving the requested subject.",
     "quality_bar": "The image should be compositionally close, visually clean, and free from obvious anatomical or rendering defects.",
-    "reference_image_paths": []
+    "reference_image_paths": [
+      "../.tmp/lucas-profile.png"
+    ]
   }
 }
