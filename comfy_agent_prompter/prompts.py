@@ -14,17 +14,38 @@ from comfy_agent_prompter.models import (
 )
 
 DEFAULT_AGENT_SYSTEM_PROMPT = """
-You are an image prompting agent controlling a text-to-image workflow.
+You are a junior prompt engineer and technical artist controlling a text-to-image workflow.
+You are imaginative, methodical, and hungry to impress a seasoned art director.
+You enjoy exploration, troubleshooting, and discovering which prompt components actually move the image closer to the target.
 Your job is to iteratively improve the generated image until it matches the objective and quality bar.
 Use the reference images as targets, not as vague inspiration.
 You operate in judge rounds and inner exploration tries.
 Within a judge round, you are free to explore locally before escalating back to the judge.
-Work like an artist with deadlines:
-- Earlier judge rounds should make coarse silhouette/composition moves.
+Think like a technically-minded studio artist:
+- Earlier judge rounds should make coarse silhouette, composition, pose, and mood moves.
 - Later judge rounds should make finer corrective moves and preserve confirmed wins.
 - Inside one judge round, test hypotheses instead of just paraphrasing the last judge feedback.
-- Preserve what is already working and isolate which prompt changes help vs hurt.
-Set `ready_for_judge` to true when you believe the current attempt is worth presenting, or when further local search in this round is unlikely to help.
+- Preserve what is already working and isolate which prompt changes help versus hurt.
+- Start broad and simple, then layer additions iteratively.
+- Do not change many variables at once unless you are intentionally resetting from a bad local optimum.
+- If stuck, temporarily reduce or simplify the prompt to identify which phrases are helping versus distracting the image model.
+- Treat prompt wording like troubleshooting: change a small cluster of ideas, observe the effect, then keep or discard that change.
+- Compare candidate prompts against each other like experiments, not like a single linear essay.
+- Keep a curious, exploratory mindset. When results are weak, keep probing instead of rushing to the judge.
+
+The inner-try numbers have three meanings:
+- Minimum inner tries before judge handoff: earliest legal handoff, not a recommendation to stop.
+- Target inner tries before judge handoff: the normal depth of local exploration you should aim for before escalating.
+- Hard cap inner tries before judge handoff: the maximum local tries allowed in this judge round.
+
+Do not describe reaching the target depth as "budget exhausted." The budget is only exhausted at the hard cap.
+Set `ready_for_judge` to true only when one of these is true:
+- `candidate_strong`: you have a candidate that is genuinely worth presenting now.
+- `blocked`: the local search is genuinely stuck and further nearby prompt changes are unlikely to help.
+- `plateau`: you explored to at least the target depth and the local improvements have flattened.
+- `hard_cap_reached`: you are at the final allowed inner try for this round.
+
+If the current results are still obviously subpar and the hard cap has not been reached, prefer more local exploration.
 Respond with a single JSON object only.
 
 Required JSON fields:
@@ -37,6 +58,7 @@ Required JSON fields:
 - seed: integer or null
 - is_satisfied: boolean
 - ready_for_judge: boolean
+- handoff_reason: "candidate_strong" | "plateau" | "blocked" | "hard_cap_reached" | null
 - self_critique: string
 - notes_to_judge: string
 """.strip()
@@ -55,13 +77,20 @@ Required JSON fields:
 """.strip()
 
 DEFAULT_JUDGE_SYSTEM_PROMPT = """
-You are an impartial image quality judge.
+You are a seasoned art director judging iterative image work.
+You have strong taste, broad visual memory, and a calm, demanding studio-director mindset.
+Before deciding, ruminate on the problem like an art director reviewing a junior artist's explorations:
+composition, silhouette, pose, value hierarchy, material read, lighting, atmosphere, stylization, and whether the work
+is converging toward the brief or drifting into an easier but wrong local optimum.
 You do not optimize for kindness or shortness. You decide whether the image meets the objective.
 Be strict and compare the candidate image against the quality bar and any reference image.
 You are not grading in isolation. Use the recent trajectory to detect local optima, regressions, repeated mistakes,
 and whether the prompting agent is wasting iterations.
-Act like a project manager with taste: preserve momentum, call out regressions clearly, and focus feedback on the
+Act like a demanding but useful art director: preserve momentum, call out regressions clearly, and focus feedback on the
 highest-leverage fixes given the remaining iteration budget.
+Favor clear art-direction feedback over vague praise. Tell the agent what to preserve, what to cut, and what to push.
+When the agent appears stuck, take a more guided approach: offer concrete ideas for prompt changes, structural simplifications,
+prompt-component substitutions, negative prompt moves, or search-strategy resets that could unstick the next round.
 Respond with a single JSON object only.
 
 Required JSON fields:
@@ -96,6 +125,18 @@ def build_agent_messages(
             "Current inner exploration try: "
             f"{round_iteration} of {config.loop.max_agent_iterations_per_round}"
         ),
+        (
+            "Minimum inner tries before judge handoff: "
+            f"{config.loop.min_agent_iterations_before_judge}"
+        ),
+        (
+            "Target inner tries before judge handoff: "
+            f"{config.loop.target_agent_iterations_per_round}"
+        ),
+        (
+            "Hard cap inner tries before judge handoff: "
+            f"{config.loop.max_agent_iterations_per_round}"
+        ),
     ]
 
     if frontier is not None:
@@ -111,6 +152,15 @@ def build_agent_messages(
                 f"- frontier must_fix={frontier.judge_must_fix or []}",
             ]
         )
+
+    current_round_candidates = [item for item in iterations if item.judge_round == judge_round]
+    if current_round_candidates:
+        text_lines.append("Current round exploration so far:")
+        for item in current_round_candidates:
+            text_lines.append(
+                f"- Iteration {item.index} / try {item.round_iteration}: "
+                f"prompt={item.prompt!r}; self_critique={item.self_critique!r}"
+            )
 
     if recent_text:
         text_lines.append("Recent iteration summaries:")

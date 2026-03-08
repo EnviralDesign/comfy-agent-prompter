@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import random
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -86,8 +87,26 @@ class OrchestrationRunner:
                 objective_override=objective_override,
                 reference_image_paths_override=reference_image_paths_override,
             )
+            run_seed = (
+                config.generation_defaults.seed
+                if config.generation_defaults.seed is not None
+                else random.randint(1, 2**53 - 1)
+            )
+            config = config.model_copy(
+                update={
+                    "generation_defaults": config.generation_defaults.model_copy(
+                        update={"seed": run_seed}
+                    )
+                }
+            )
             await self.run_store.update_run(run_id, status="running")
             await self.run_store.append_event(run_id, "run.started", "Run started.")
+            await self.run_store.append_event(
+                run_id,
+                "run.seed_fixed",
+                f"Using fixed seed {run_seed} for this run.",
+                seed=run_seed,
+            )
 
             reference_data_urls = [path_to_data_url(path) for path in config.task.reference_image_paths]
             output_dir = ensure_dir(Path("runs") / f"{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}-{run_id}")
@@ -110,6 +129,13 @@ class OrchestrationRunner:
             frontier_snapshot: IterationSnapshot | None = None
             accepted = False
             judge_round_limit = config.loop.max_judge_rounds or config.loop.max_iterations
+            target_agent_iterations_per_round = max(
+                config.loop.min_agent_iterations_before_judge,
+                min(
+                    config.loop.target_agent_iterations_per_round,
+                    config.loop.max_agent_iterations_per_round,
+                ),
+            )
             global_iteration_index = 0
             stop_reason = "max_judge_rounds_reached"
 
@@ -144,6 +170,7 @@ class OrchestrationRunner:
                         round_iteration=round_iteration,
                         max_judge_rounds=judge_round_limit,
                         max_agent_iterations_per_round=config.loop.max_agent_iterations_per_round,
+                        target_agent_iterations_per_round=target_agent_iterations_per_round,
                         provider_label=config.providers["agent"].label,
                         provider_model=config.providers["agent"].model,
                         provider_base_url=config.providers["agent"].base_url,
@@ -170,6 +197,7 @@ class OrchestrationRunner:
                         round_iteration=round_iteration,
                         prompt=plan.prompt,
                         ready_for_judge=plan.ready_for_judge,
+                        handoff_reason=plan.handoff_reason,
                     )
 
                     primary_reference = (
@@ -262,7 +290,13 @@ class OrchestrationRunner:
                             else config.generation_defaults.cfg_scale
                         ),
                         seed=(
-                            plan.seed if workflow_mapping.seed is not None else config.generation_defaults.seed
+                            (
+                                plan.seed
+                                if plan.seed is not None
+                                else config.generation_defaults.seed
+                            )
+                            if workflow_mapping.seed is not None
+                            else config.generation_defaults.seed
                         ),
                         self_critique=plan.self_critique,
                         notes_to_judge=plan.notes_to_judge,
@@ -285,6 +319,29 @@ class OrchestrationRunner:
                         plan.ready_for_judge
                         and round_iteration >= config.loop.min_agent_iterations_before_judge
                     ):
+                        can_handoff_early = (
+                            round_iteration >= target_agent_iterations_per_round
+                            or plan.handoff_reason in {"candidate_strong", "blocked"}
+                        )
+                        if not can_handoff_early:
+                            await self.run_store.append_event(
+                                run_id,
+                                "agent.continue_exploring",
+                                (
+                                    f"Agent asked for judge review after iteration {global_iteration_index}, "
+                                    "but the runner kept local exploration going because the request came "
+                                    "before the target exploration depth without a strong-candidate or "
+                                    "blocked justification."
+                                ),
+                                iteration=global_iteration_index,
+                                judge_round=judge_round,
+                                round_iteration=round_iteration,
+                                handoff_reason=plan.handoff_reason,
+                                min_agent_iterations_before_judge=config.loop.min_agent_iterations_before_judge,
+                                target_agent_iterations_per_round=target_agent_iterations_per_round,
+                                max_agent_iterations_per_round=config.loop.max_agent_iterations_per_round,
+                            )
+                            continue
                         requested_judge_early = True
                         await self.run_store.append_event(
                             run_id,
@@ -296,6 +353,8 @@ class OrchestrationRunner:
                             iteration=global_iteration_index,
                             judge_round=judge_round,
                             round_iteration=round_iteration,
+                            handoff_reason=plan.handoff_reason,
+                            target_agent_iterations_per_round=target_agent_iterations_per_round,
                         )
                         break
 

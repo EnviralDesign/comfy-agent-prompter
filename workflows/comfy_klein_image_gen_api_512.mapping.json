@@ -2,5 +2,9 @@
   "positive_prompt": {
     "node_id": "517",
     "input_name": "text"
+  },
+  "seed": {
+    "node_id": "531",
+    "input_name": "noise_seed"
   }
 }

@@ -13,7 +13,7 @@
       "model": "openai/gpt-5.3-chat",
       "api_key_env": "OPENROUTER_API_KEY",
       "response_format": "json_object",
-      "temperature": 0.4,
+      "temperature": 0.6,
       "max_tokens": 1400
     },
     "judge": {
@@ -22,7 +22,7 @@
       "model": "openai/gpt-5.4",
       "api_key_env": "OPENROUTER_API_KEY",
       "response_format": "json_object",
-      "temperature": 0.1,
+      "temperature": 0.2,
       "max_tokens": 800
     }
   },
@@ -30,7 +30,8 @@
     "enable_judge": true,
     "max_iterations": 4,
     "max_judge_rounds": 4,
-    "max_agent_iterations_per_round": 3,
+    "max_agent_iterations_per_round": 5,
+    "target_agent_iterations_per_round": 4,
     "min_agent_iterations_before_judge": 2,
     "agent_text_history_turns": 4,
     "agent_image_history_turns": 2,
@@ -52,7 +53,7 @@
     "objective": "Create an image that matches the supplied reference image's composition and mood while preserving the requested subject.",
     "quality_bar": "The image should be compositionally close, visually clean, and free from obvious anatomical or rendering defects.",
     "reference_image_paths": [
-      "../.tmp/lucas-profile.png"
+      "../.tmp/goddess.png"
     ]
   }
 }

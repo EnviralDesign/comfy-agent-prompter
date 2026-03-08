@@ -55,7 +55,12 @@ def load_app_config(
                 extra_headers["HTTP-Referer"] = referer
             if title and "X-Title" not in extra_headers:
                 extra_headers["X-Title"] = title
-        providers[role] = provider.model_copy(update={"extra_headers": extra_headers})
+        providers[role] = provider.model_copy(
+            update={
+                "extra_headers": extra_headers,
+                "model": _resolve_provider_model_override(role, provider.model),
+            }
+        )
 
     return config.model_copy(update={"providers": providers})
 
@@ -74,3 +79,12 @@ def _resolve_relative(config_file: Path, raw_path: str) -> Path:
         return candidate
     return (config_file.parent / candidate).resolve()
 
+
+def _resolve_provider_model_override(role: str, default_model: str) -> str:
+    env_name = {
+        "agent": "CAP_PROMPTER_MODEL",
+        "judge": "CAP_JUDGE_MODEL",
+    }.get(role)
+    if not env_name:
+        return default_model
+    return os.getenv(env_name) or default_model

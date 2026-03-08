@@ -43,8 +43,9 @@ At the end of each judge round, the prompter selects the best candidate from its
 ## Quick start
 
 1. Copy [`.env.example`](/C:/repos/comfy-agent-prompter/.env.example) to `.env` and set `OPENROUTER_API_KEY` if you want to use OpenRouter.
-2. Update [`examples/config.example.json`](/C:/repos/comfy-agent-prompter/examples/config.example.json) with the actual model IDs and any reference image paths you want.
-3. If you swap workflows later, update the `workflow_path` and `mapping_path` in that config file.
+2. Optionally set `CAP_PROMPTER_MODEL` and `CAP_JUDGE_MODEL` in `.env` if you want to override the JSON config's model IDs without editing the config file.
+3. Update [`examples/config.example.json`](/C:/repos/comfy-agent-prompter/examples/config.example.json) with the provider base URLs and any reference image paths you want.
+4. If you swap workflows later, update the `workflow_path` and `mapping_path` in that config file.
 5. Run:
 
 ```powershell
@@ -99,15 +100,28 @@ The config file is JSON and contains:
 - `task.objective`
 - `task.reference_image_paths`
 
+Environment overrides:
+
+- `CAP_PROMPTER_MODEL` overrides `providers.agent.model`
+- `CAP_JUDGE_MODEL` overrides `providers.judge.model`
+
 Important loop knobs:
 
 - `loop.max_judge_rounds`
 - `loop.max_agent_iterations_per_round`
+- `loop.target_agent_iterations_per_round`
 - `loop.min_agent_iterations_before_judge`
 - `loop.agent_text_history_turns`
 - `loop.agent_image_history_turns`
 - `loop.judge_text_history_turns`
 - `loop.judge_image_history_turns`
+
+Seed behavior:
+
+- If `generation_defaults.seed` is set, that exact seed is used for the whole run.
+- If it is omitted, the harness chooses one random seed at run start and keeps it fixed for the whole run.
+
+This keeps prompt exploration from being confounded by per-iteration seed changes.
 
 Both providers are expected to expose OpenAI-compatible endpoints. For the first slice this means:
 

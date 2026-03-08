@@ -52,8 +52,9 @@ class LoopConfig(BaseModel):
     enable_judge: bool = True
     max_iterations: int = 8
     max_judge_rounds: int | None = None
-    max_agent_iterations_per_round: int = 3
-    min_agent_iterations_before_judge: int = 1
+    max_agent_iterations_per_round: int = 5
+    target_agent_iterations_per_round: int = 4
+    min_agent_iterations_before_judge: int = 2
     agent_text_history_turns: int = 4
     agent_image_history_turns: int = 2
     judge_text_history_turns: int = 3
@@ -94,6 +95,7 @@ class AgentPlan(BaseModel):
     seed: int | None = None
     is_satisfied: bool = False
     ready_for_judge: bool = False
+    handoff_reason: Literal["candidate_strong", "plateau", "blocked", "hard_cap_reached"] | None = None
     self_critique: str | None = None
     notes_to_judge: str | None = None
 
